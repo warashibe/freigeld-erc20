@@ -22,3 +22,8 @@ Returns the amount of interests deducted from the totalSupply.
 function totalInterests() public view virtual returns (uint256)
 ```
 
+## Test
+
+``` bash
+yarn test
+```
