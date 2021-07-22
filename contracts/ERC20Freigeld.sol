@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
-
+import "hardhat/console.sol";
 /**
  * @dev Implementation of the {IERC20} interface.
  *
@@ -44,6 +44,9 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
   string private _name;
   string private _symbol;
 
+  uint256 private _totalShare;
+  uint256 private _genesis;
+  
   /**
    * @dev Sets the values for {name} and {symbol}.
    *
@@ -95,7 +98,7 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
    */
   function totalInterests() public view virtual returns (uint256 _total_interests) {
     uint256 _supply = totalSupply();
-    _total_interests = _interests + (_lastSupply - _supply);
+    _total_interests = _interests + (_totalSupply - _supply);
   }
     
   /**
@@ -103,15 +106,22 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
    */
   function totalSupply() public view virtual override returns (uint256 _supply) {
     uint256 minus = _rate_denominator == 0 ? 0 : _totalSupply * (block.number - _lastBlock) * _rate_numerator / _rate_denominator;
-    _supply =  _lastSupply > minus ? _lastSupply - minus : 0;
+    _supply =  _totalSupply > minus ? _totalSupply - minus : 0;
   }
-
+  
   /**
    * @dev See {IERC20-balanceOf}.
    */
   function balanceOf(address account) public view virtual override returns (uint256 _balance) {
-    uint256 minus = _rate_denominator == 0 ? 0 : _balances[account] * (block.number - _lastBlocks[account]) * _rate_numerator / _rate_denominator;
-    _balance =  _balances[account] > minus ? _balances[account] - minus : 0;
+    _balance =  _totalShare == 0 ? 0 : totalSupply() * shareOf(account) / _totalShare;
+  }
+
+  function toShare(uint256 amount) public view virtual returns (uint256 share) {
+    share = totalSupply() == 0 ? amount : amount * _totalShare / totalSupply();
+  }
+  
+  function shareOf(address account) public view virtual returns (uint256 share) {
+    share = _lastBlocks[account] < _genesis ? 0 : _balances[account];
   }
 
   /**
@@ -226,20 +236,16 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
     require(sender != address(0), "ERC20: transfer from the zero address");
     require(recipient != address(0), "ERC20: transfer to the zero address");
     _beforeTokenTransfer(sender, recipient, amount);
-    uint256 senderBalance = balanceOf(sender);
-    require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
-    if(sender != recipient){
-      uint256 recipientBalance = balanceOf(recipient);
-      uint256 _supply = totalSupply();
-      _interests += (_lastSupply - _supply);
-      _totalSupply = _totalSupply + senderBalance + recipientBalance - _balances[sender] - _balances[recipient];
-      _balances[sender] = senderBalance - amount;
-      _balances[recipient] = recipientBalance + amount;
-      _lastBlocks[sender] = block.number;
-      _lastBlocks[recipient] = block.number;
-      _lastBlock = block.number;
-      _lastSupply = _supply;
-    }
+    uint256 share = toShare(amount);
+    require(shareOf(sender) >= share, "ERC20: transfer amount exceeds balance");
+    _balances[sender] -= share;
+    _balances[recipient] += share;
+    uint256 _supply = totalSupply();
+    _interests += (_totalSupply - _supply);
+    _totalSupply = totalSupply();
+    _lastBlocks[sender] = block.number;
+    _lastBlocks[recipient] = block.number;
+    _lastBlock = block.number;
     emit Transfer(sender, recipient, amount);
   }
 
@@ -255,14 +261,17 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
   function _mint(address account, uint256 amount) internal virtual {
     require(account != address(0), "ERC20: mint to the zero address");
     _beforeTokenTransfer(address(0), account, amount);
-    uint256 _balance = balanceOf(account);
+    uint256 share = toShare(amount);
     uint256 _supply = totalSupply();
-    _interests += (_lastSupply - _supply);
-    _totalSupply = _totalSupply + _balance + amount - _balances[account];
-    _balances[account] = _balance + amount;
+    bool reset = _supply == 0 || share / _supply > 10 ** 15;
+    if(reset) _supply = 0;
+    _interests += (_totalSupply - _supply);
+    if(reset) _genesis = block.number;
+    _totalShare = reset ? share : _totalShare + share;
+    _totalSupply = _supply + amount;
+    _balances[account] = shareOf(account) + share;
     _lastBlocks[account] = block.number;
     _lastBlock = block.number;
-    _lastSupply = _supply + amount;
     emit Transfer(address(0), account, amount);
   }
 
@@ -279,19 +288,16 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
    */
   function _burn(address account, uint256 amount) internal virtual {
     require(account != address(0), "ERC20: burn from the zero address");
-
     _beforeTokenTransfer(account, address(0), amount);
-
-    uint256 _balance = balanceOf(account);
-    require(_balance >= amount, "ERC20: burn amount exceeds balance");
-
+    uint256 share = toShare(amount);
+    require(shareOf(account) >= share, "ERC20: burn amount exceeds balance");
     uint256 _supply = totalSupply();
-    _interests += (_lastSupply - _supply);
-    _totalSupply = _totalSupply + _balance - amount - _balances[account];
-    _balances[account] = _balance - amount;
+    _interests += (_totalSupply - _supply);
+    _totalSupply = _supply - amount;
+    _totalShare -= share;
+    _balances[account] -= share;
     _lastBlocks[account] = block.number;
     _lastBlock = block.number;
-    _lastSupply = _supply - amount;
     emit Transfer(account, address(0), amount);
   }
 
