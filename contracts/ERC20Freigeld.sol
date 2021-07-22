@@ -5,7 +5,7 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/utils/Context.sol";
-import "hardhat/console.sol";
+
 /**
  * @dev Implementation of the {IERC20} interface.
  *
@@ -116,12 +116,18 @@ contract ERC20Freigeld is Context, IERC20, IERC20Metadata {
     _balance =  _totalShare == 0 ? 0 : totalSupply() * shareOf(account) / _totalShare;
   }
 
-  function toShare(uint256 amount) public view virtual returns (uint256 share) {
-    share = totalSupply() == 0 ? amount : amount * _totalShare / totalSupply();
+  /**
+   * @dev Convert amount to share.
+   */
+  function toShare(uint256 amount) public view virtual returns (uint256 _share) {
+    _share = totalSupply() == 0 ? amount : amount * _totalShare / totalSupply();
   }
-  
-  function shareOf(address account) public view virtual returns (uint256 share) {
-    share = _lastBlocks[account] < _genesis ? 0 : _balances[account];
+
+  /**
+   * @dev Return the share of the account.
+   */
+  function shareOf(address account) public view virtual returns (uint256 _share) {
+    _share = _lastBlocks[account] < _genesis ? 0 : _balances[account];
   }
 
   /**
